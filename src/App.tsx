@@ -31,6 +31,21 @@ const STORAGE_KEY_LIBRARY = 'revise_ai_study_library_v3';
 const STORAGE_KEY_LEGACY = 'revise_ai_study_workspace_v2';
 const STORAGE_KEY_GUEST = 'revise_ai_guest_mode';
 
+function sanitizeForFirestore(obj: any): any {
+  if (obj === undefined) return null;
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj.map((item) => sanitizeForFirestore(item));
+  }
+  const cleanObj: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val !== undefined) {
+      cleanObj[key] = sanitizeForFirestore(val);
+    }
+  }
+  return cleanObj;
+}
+
 function createNewProject(initialTitle = ''): RevisionProject {
   return {
     id: `project-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -38,7 +53,7 @@ function createNewProject(initialTitle = ''): RevisionProject {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     sources: [],
-    language: 'auto',
+    language: 'English',
     teachingStyle: 'standard',
     customInstruction: '',
     allowWebSearch: true, // Auto-ticked by default especially when no sources
@@ -48,8 +63,26 @@ function createNewProject(initialTitle = ''): RevisionProject {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'topics' | 'sources' | 'teach' | 'notes' | 'quiz'>('topics');
-  const [projects, setProjects] = useState<RevisionProject[]>([]);
-  const [currentProjectId, setCurrentProjectId] = useState<string>('');
+  const [projects, setProjects] = useState<RevisionProject[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_LIBRARY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+  const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_LIBRARY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed[0].id;
+      }
+    } catch {}
+    return '';
+  });
   const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -76,14 +109,24 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (!currentUser) {
-        // Guest mode: do NOT auto-create topic and do NOT load or save topics to storage
-        setProjects([]);
-        setCurrentProjectId('');
+        // Guest mode: load guest/local topics if available
+        try {
+          const localSaved = localStorage.getItem(STORAGE_KEY_LIBRARY);
+          if (localSaved) {
+            const parsed = JSON.parse(localSaved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setProjects(parsed);
+              setCurrentProjectId((prev) => (prev && parsed.some((p: any) => p.id === prev) ? prev : parsed[0].id));
+            }
+          }
+        } catch (e) {
+          console.warn('Error reading guest storage:', e);
+        }
         setIsAuthLoading(false);
         return;
       }
 
-      // User has logged in: Fetch their saved cloud topics from Firestore
+      // User has logged in: Fetch their saved cloud topics from Firestore and merge with any active in-memory/guest topics
       try {
         setIsGuest(false);
         try {
@@ -99,22 +142,90 @@ export default function App() {
           if (data.projects && Array.isArray(data.projects)) {
             cloudProjects = data.projects;
           }
+        } else {
+          // Check user-specific localStorage cache if Firestore doc not yet created
+          try {
+            const cached = localStorage.getItem(`revise_ai_user_${currentUser.uid}_projects`);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed)) cloudProjects = parsed;
+            }
+          } catch {}
         }
 
-        setProjects(cloudProjects);
-        if (cloudProjects.length > 0) {
-          setCurrentProjectId(cloudProjects[0].id);
+        // Merge local in-memory / guest projects into cloud topics so user never loses their active work
+        const projectMap = new Map<string, RevisionProject>();
+        for (const cp of cloudProjects) {
+          if (cp && cp.id) projectMap.set(cp.id, cp);
+        }
+
+        // Check currently loaded projects in state or guest storage
+        const localCandidates: RevisionProject[] = [...projects];
+        try {
+          const guestSaved = localStorage.getItem(STORAGE_KEY_LIBRARY);
+          if (guestSaved) {
+            const parsed = JSON.parse(guestSaved);
+            if (Array.isArray(parsed)) {
+              for (const p of parsed) {
+                if (p && p.id && !localCandidates.some((c) => c.id === p.id)) {
+                  localCandidates.push(p);
+                }
+              }
+            }
+          }
+        } catch {}
+
+        for (const lp of localCandidates) {
+          if (lp && lp.id && (lp.title || lp.sources?.length || lp.lesson || lp.notes || lp.quiz)) {
+            const existing = projectMap.get(lp.id);
+            if (!existing || ((lp.updatedAt || 0) >= (existing.updatedAt || 0))) {
+              projectMap.set(lp.id, lp);
+            }
+          }
+        }
+
+        const mergedProjects = Array.from(projectMap.values());
+
+        // Update state
+        setProjects(mergedProjects);
+
+        // Retain or select active project
+        if (mergedProjects.length > 0) {
+          setCurrentProjectId((prev) => (prev && mergedProjects.some((p) => p.id === prev) ? prev : mergedProjects[0].id));
         } else {
           setCurrentProjectId('');
         }
 
-        // When logging into account, navigate to their topic's page and show their saved topics
-        setActiveTab('topics');
+        // Persist merged data immediately to Firestore and localStorage
+        const cleanPayload = sanitizeForFirestore({
+          projects: mergedProjects,
+          updatedAt: Date.now(),
+          email: currentUser.email || '',
+          displayName: currentUser.displayName || '',
+        });
+
+        await setDoc(userRef, cleanPayload, { merge: true }).catch((e) => {
+          console.warn('Initial Firestore save warning:', e);
+        });
+
+        try {
+          localStorage.setItem(`revise_ai_user_${currentUser.uid}_projects`, JSON.stringify(mergedProjects));
+          // Clear guest storage after successful migration into user account
+          localStorage.removeItem(STORAGE_KEY_LIBRARY);
+        } catch {}
+
       } catch (err) {
-        console.warn("Could not retrieve topics from Firestore:", err);
-        setProjects([]);
-        setCurrentProjectId('');
-        setActiveTab('topics');
+        console.warn("Could not retrieve topics from Firestore, using local cache:", err);
+        try {
+          const cached = localStorage.getItem(`revise_ai_user_${currentUser.uid}_projects`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+              setProjects(parsed);
+              if (parsed.length > 0) setCurrentProjectId(parsed[0].id);
+            }
+          }
+        } catch {}
       } finally {
         setIsAuthLoading(false);
       }
@@ -122,16 +233,33 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Persist projects to Firestore ONLY for logged in users (Guest mode does NOT save topics)
+  // Persist projects whenever projects change:
+  // - To Firestore & User Cache for logged in users
+  // - To LocalStorage for guest users
   useEffect(() => {
-    if (user && !isAuthLoading) {
+    if (isAuthLoading) return;
+
+    if (user) {
       try {
+        const cleanPayload = sanitizeForFirestore({
+          projects,
+          updatedAt: Date.now(),
+          email: user.email || '',
+          displayName: user.displayName || '',
+        });
         const userRef = doc(db, 'users', user.uid);
-        setDoc(userRef, { projects, updatedAt: Date.now() }, { merge: true }).catch((e) => {
+        setDoc(userRef, cleanPayload, { merge: true }).catch((e) => {
           console.warn("Failed to sync to Firestore in background", e);
         });
+        localStorage.setItem(`revise_ai_user_${user.uid}_projects`, JSON.stringify(projects));
       } catch (e) {
         console.warn("Failed to initiate Firestore sync", e);
+      }
+    } else {
+      try {
+        localStorage.setItem(STORAGE_KEY_LIBRARY, JSON.stringify(projects));
+      } catch (e) {
+        console.warn("Failed to save to local guest storage", e);
       }
     }
   }, [projects, user, isAuthLoading]);

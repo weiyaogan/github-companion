@@ -312,12 +312,11 @@ export const SourceManager: React.FC<SourceManagerProps> = ({
                   </label>
                   <select
                     id="language-select"
-                    value={language}
+                    value={language || 'English'}
                     onChange={(e) => setLanguage && setLanguage(e.target.value)}
-                    className="bg-indigo-950/80 text-white border border-indigo-400/40 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                    className="bg-indigo-950/80 text-white border border-indigo-400/40 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 cursor-pointer"
                   >
-                    <option value="auto">Auto-detect from source</option>
-                    <option value="English">English</option>
+                    <option value="English">English (Default)</option>
                     <option value="Bahasa Melayu">Bahasa Melayu (SPM / STPM)</option>
                     <option value="Chinese (Simplified)">Chinese (Simplified / 简体中文)</option>
                     <option value="Chinese (Traditional)">Chinese (Traditional / 繁體中文)</option>
@@ -336,6 +335,7 @@ export const SourceManager: React.FC<SourceManagerProps> = ({
                     <option value="Tagalog">Tagalog (Filipino)</option>
                     <option value="Vietnamese">Vietnamese (Tiếng Việt)</option>
                     <option value="Thai">Thai (ภาษาไทย)</option>
+                    <option value="auto">Auto-detect from source</option>
                   </select>
                 </div>
               </div>

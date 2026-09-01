@@ -1006,9 +1006,10 @@ app.post('/api/generate-lesson', async (req, res) => {
     const ai = getAI();
 
     if (ai) {
-      const langDirective = language && language !== 'auto'
+      const isCustomLang = language && language.trim() !== '' && language.toLowerCase() !== 'auto' && language.toLowerCase() !== 'default';
+      const langDirective = isCustomLang
         ? `Generate ALL content, titles, explanations, analogies, key terms, and questions strictly in "${language}".`
-        : `CRITICAL LANGUAGE REQUIREMENT: Identify the primary language of the source documents. You MUST write EVERYTHING (every title, section, definition, explanation, markdown, flashcard, question, etc.) ENTIRELY in that exact same language. For example, if the source text is in Malay/Bahasa Melayu, you MUST output 100% Malay/Bahasa Melayu. Do NOT use English unless the user explicitly requests another language in the custom instructions.`;
+        : `CRITICAL LANGUAGE REQUIREMENT: The user has not selected an alternate language. You MUST write ALL content, titles, sections, definitions, detailed explanations, analogies, key terms, pitfalls, check questions, and markdown notes ENTIRELY in ENGLISH (even if the source text or prompt contains other languages).`;
 
       const styleDirective = customInstruction || teachingStyle
         ? `USER'S CUSTOM TEACHING & STYLE DIRECTIVE: "${customInstruction || teachingStyle}". (e.g. If the student asked "teach like I am a beginner", simplify complex terminology, use vivid everyday analogies, and break ideas down step-by-step. If asked "make it more interesting", add dramatic real-life applications, intriguing hooks, and engaging narrative flow. If "university level", provide high-level academic depth).`
@@ -1130,9 +1131,10 @@ app.post('/api/generate-notes', async (req, res) => {
     const ai = getAI();
 
     if (ai) {
-      const langDirective = language && language !== 'auto'
+      const isCustomLang = language && language.trim() !== '' && language.toLowerCase() !== 'auto' && language.toLowerCase() !== 'default';
+      const langDirective = isCustomLang
         ? `Generate ALL markdown notes, flashcards, concept maps, formulas, and cheat sheets strictly in "${language}".`
-        : `CRITICAL LANGUAGE REQUIREMENT: Identify the primary language of the source documents. You MUST write EVERYTHING (every title, section, definition, explanation, markdown, flashcard, question, etc.) ENTIRELY in that exact same language. For example, if the source text is in Malay/Bahasa Melayu, you MUST output 100% Malay/Bahasa Melayu. Do NOT use English unless the user explicitly requests another language in the custom instructions.`;
+        : `CRITICAL LANGUAGE REQUIREMENT: The user has not selected an alternate language. You MUST write EVERYTHING (summaryMarkdown, flashcard questions and answers, concept map labels, descriptions, formulas, and quick cheat sheet points) ENTIRELY in ENGLISH (even if the source text contains other languages).`;
 
       let focusInstruction = '';
       if (notesFocus === 'analogies') {
@@ -1272,9 +1274,10 @@ app.post('/api/generate-quiz', async (req, res) => {
     const ai = getAI();
 
     if (ai) {
-      const langDirective = language && language !== 'auto'
+      const isCustomLang = language && language.trim() !== '' && language.toLowerCase() !== 'auto' && language.toLowerCase() !== 'default';
+      const langDirective = isCustomLang
         ? `Write ALL questions, options, answers, hints, and explanations strictly in "${language}".`
-        : `CRITICAL LANGUAGE REQUIREMENT: Identify the primary language of the source documents. You MUST write EVERYTHING (every title, section, definition, explanation, markdown, flashcard, question, etc.) ENTIRELY in that exact same language. For example, if the source text is in Malay/Bahasa Melayu, you MUST output 100% Malay/Bahasa Melayu. Do NOT use English unless the user explicitly requests another language in the custom instructions.`;
+        : `CRITICAL LANGUAGE REQUIREMENT: The user has not selected an alternate language. You MUST write ALL questions, options, answers, hints, and explanations ENTIRELY in ENGLISH.`;
 
       const styleDirective = customInstruction || teachingStyle
         ? `CUSTOM INSTRUCTION: "${customInstruction || teachingStyle}". (e.g. if requested 'beginner', test fundamental concepts clearly; if 'exam focus', write realistic exam board style questions with marking hints).`
@@ -1369,9 +1372,10 @@ app.post('/api/adapt-lesson-section', async (req, res) => {
 
     const ai = getAI();
     if (ai) {
-      const langDirective = language && language !== 'auto'
+      const isCustomLang = language && language.trim() !== '' && language.toLowerCase() !== 'auto' && language.toLowerCase() !== 'default';
+      const langDirective = isCustomLang
         ? `Write the adapted explanation strictly in "${language}".`
-        : `CRITICAL LANGUAGE REQUIREMENT: Write the adapted explanation in the exact same language as the current section text. For example, if the current section is in Malay/Bahasa Melayu, you MUST output 100% Malay/Bahasa Melayu.`;
+        : `Write the adapted explanation ENTIRELY in ENGLISH.`;
 
       const prompt = `You are a personalized Socratic tutor. The student is asking you to adapt or re-explain the following chapter section according to their specific learning preference:
 
@@ -1576,9 +1580,10 @@ app.post('/api/tutor-chat', async (req, res) => {
       styleInstruction += `\nUSER CUSTOM PREFERENCE: "${customInstruction}". Obey this teaching style closely in your explanations.`;
     }
 
-    const langDirective = language && language !== 'auto'
+    const isCustomLang = language && language.trim() !== '' && language.toLowerCase() !== 'auto' && language.toLowerCase() !== 'default';
+    const langDirective = isCustomLang
       ? `Generate your response strictly in "${language}".`
-      : `CRITICAL LANGUAGE REQUIREMENT: Identify the primary language of the student's prompt and the source documents. You MUST write EVERYTHING ENTIRELY in that exact same language. Do NOT use English unless the user explicitly requests another language.`;
+      : `Unless the student explicitly asks you to reply in another language in their message, write your entire response and suggested questions in ENGLISH.`;
 
     let sourceContext = '';
     if (sources && sources.length) {
